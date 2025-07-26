@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Staff Attendance Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      padding: 10px;
+      text-align: center;
+      background: #f7f7fa;
+    }
+    h2 {
+      margin-bottom: 10px;
+      color: #2b2d42;
+    }
+    #reader {
+      width: 100%;
+      max-width: 500px;
+      aspect-ratio: 1/1;
+      min-height: 320px;
+      margin: 20px auto 0 auto;
+      border-radius: 16px;
+      box-shadow: 0 2px 12px rgba(44,62,80,0.12);
+      background: #fff;
+      overflow: hidden;
+      position: relative;
+    }
+    #result {
+      margin-top: 16px;
+      font-size: 1.1rem;
+      color: #e63946;
+    }
+    #reader video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover; /* This is the key property */
+    }
+    .camera-controls {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .camera-controls button {
+      padding: 14px 28px;
+      font-size: 1.1rem;
+      background: #457b9d;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(44,62,80,0.08);
+      transition: background 0.2s;
+    }
+    .camera-controls button:hover {
+      background: #1d3557;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.6);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background-color: #fefefe;
+      margin: auto;
+      padding: 24px 12px;
+      border-radius: 12px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.18);
+      width: 95vw;
+      max-width: 370px;
+      text-align: center;
+      position: relative;
+    }
+    .modal-content button {
+      margin-top: 18px;
+      padding: 10px 24px;
+      font-size: 1rem;
+      background-color: #2b2d42;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      width: auto;
+    }
+    .modal-content button:hover {
+      background-color: #1a1c30;
+    }
+    .close-button {
+      color: #aaa;
+      position: absolute;
+      top: 10px;
+      right: 18px;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .close-button:hover,
+    .close-button:focus {
+      color: #2b2d42;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    #modalMessage {
+      font-size: 1.15rem;
+      color: #333;
+      margin-bottom: 12px;
+      word-break: break-word;
+    }
+    .modal-message.green { color: #43aa8b; }
+    .modal-message.blue { color: #457b9d; }
+    .modal-message.red { color: #e63946; }
+    .modal-message.orange { color: #f4a261; }
+    @media (max-width: 600px) {
+      #reader {
+        max-width: 98vw;
+        min-height: 220px;
+        aspect-ratio: 1/1;
+      }
+      .modal-content {
+        width: 98vw;
+        max-width: 98vw;
+        padding: 18px 4vw;
+      }
+      .camera-controls button {
+        width: 100%;
+        margin-bottom: 8px;
+      }
+      .camera-controls {
+        flex-direction: column;
+        gap: 8px;
+      }
+    }
+    
+  </style></head><body>
+  <h2>Scan QR to Mark Attendance</h2>
+  <div class="camera-controls">
+    <button id="turnOnCameraBtn">Turn On Camera</button>
+    <button id="turnOffCameraBtn">Turn Off Camera</button>
+  </div>
+  <div id="reader"></div>
+  <div id="result"></div>
+
+  <div id="scanResultModal" class="modal">
+    <div class="modal-content">
+      <span class="close-button" id="closeModalButton">&times;</span>
+      <p id="modalMessage"></p>
+      <button id="continueScanButton">Continue Scanning</button>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+        const apiBase = "https://script.google.com/macros/s/AKfycbzoE6TV4lIUQY2oxFbY-N1OBMlI8F8-OavCyhCv5WbCjjsCLbKok5xTm5Xpm7wmKpAN/exec";
+        const secretKey = "staff-secret-123";
+
+        const html5QrCode = new Html5Qrcode("reader");
+        const qrCodeConfig = { fps: 10, qrbox: { width: 300, height: 300 } };
+        const videoConstraints = { facingMode: "environment" };
+
+        const modal = document.getElementById('scanResultModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const continueScanButton = document.getElementById('continueScanButton');
+        const closeModalButton = document.getElementById('closeModalButton');
+        const resultBox = document.getElementById('result');
+
+        let isScanning = false;
+        let isProcessingScan = false;
+
+        function startScanner() {
+            if (!isScanning) {
+                html5QrCode.start(
+                    videoConstraints,
+                    qrCodeConfig,
+                    onScanSuccess
+                ).catch(err => {
+                    console.error("Unable to start scanning.", err);
+                    resultBox.innerHTML = "Unable to start camera. Please ensure camera access is granted and no other app is using it.";
+                });
+                isScanning = true;
+                isProcessingScan = false;
+                resultBox.innerHTML = '';
+                hideModal();
+            }
+        }
+
+        function stopScanner() {
+            if (isScanning && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => {
+                    console.log("QR code scanning stopped.");
+                    isScanning = false;
+                }).catch(err => {
+                    console.warn("Failed to stop scanning.", err);
+                });
+            }
+        }
+
+        function showModal(message, type) {
+            modalMessage.innerHTML = message; // Changed to innerHTML to allow <br/>
+            modalMessage.className = `modal-message ${type}`;
+            modal.style.display = 'flex';
+        }
+
+        function hideModal() {
+            modal.style.display = 'none';
+        }
+
+        continueScanButton.onclick = function() {
+            hideModal();
+            startScanner();
+        };
+
+        closeModalButton.onclick = function() {
+            hideModal();
+            startScanner();
+        };
+
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                hideModal();
+                startScanner();
+            }
+        };
+
+        async function markAttendance(studentId, action, key) {
+            const fetchAction = action || "mark";
+            const fetchKey = key || secretKey;
+            
+            showModal(`Processing ID ${studentId}...`, 'blue');
+
+            try {
+                // Perform the attendance marking fetch, which now also returns T-shirt size
+                const res = await fetch(`${apiBase}?id=${encodeURIComponent(studentId)}&key=${encodeURIComponent(fetchKey)}&action=${encodeURIComponent(fetchAction)}`);
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
+                const data = await res.json();
+                
+                let originalMessage = '';
+                let messageType = 'blue';
+                let tShirtSize = data["T-Shirt Size"] || 'N/A'; // Get T-shirt size directly from the response
+
+                if (data.success) {
+                    originalMessage = data.success;
+                    messageType = 'green';
+                } else if (data.info) {
+                    originalMessage = data.info;
+                    messageType = 'blue';
+                } else if (data.error) {
+                    originalMessage = data.error;
+                    messageType = 'red';
+                } else {
+                    originalMessage = `Unknown response`;
+                    messageType = 'orange';
+                }
+
+                isProcessingScan = false;
+                
+                // Combine the original message with the T-shirt size
+                const finalMessage = `${originalMessage}<br/><br/><strong>Size:</strong> ${tShirtSize}`;
+                showModal(finalMessage, messageType);
+
+            } catch (err) {
+                isProcessingScan = false;
+                console.error("Fetch error:", err);
+                showModal(`Error processing request: ${err.message || err}`, 'red');
+            }
+        }
+
+        function onScanSuccess(decodedText) {
+            if (isProcessingScan) {
+                console.log("Scan ignored: Already processing another scan.");
+                return;
+            }
+
+            stopScanner();
+            isProcessingScan = true;
+
+            console.log("Scanned URL:", decodedText);
+
+            try {
+                const url = new URL(decodedText);
+                const studentIdFromUrl = url.searchParams.get('id');
+                const actionFromUrl = url.searchParams.get('action');
+                const keyFromUrl = url.searchParams.get('key');
+
+                if (studentIdFromUrl) {
+                    markAttendance(studentIdFromUrl, actionFromUrl, keyFromUrl);
+                } else {
+                    showModal(`QR code URL does not contain an 'id' parameter.`, 'red');
+                    isProcessingScan = false;
+                }
+            } catch (error) {
+                console.error("Error parsing scanned QR code:", error);
+                showModal(`Scanned QR code is not a valid URL or malformed.`, 'red');
+                isProcessingScan = false;
+            }
+        }
+
+        const turnOnCameraBtn = document.getElementById('turnOnCameraBtn');
+        const turnOffCameraBtn = document.getElementById('turnOffCameraBtn');
+
+        turnOnCameraBtn.onclick = function() {
+            startScanner();
+        };
+
+        turnOffCameraBtn.onclick = function() {
+            stopScanner();
+        };
+
+        startScanner();
+    };
+  </script></body></html>
