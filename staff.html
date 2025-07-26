@@ -36,7 +36,7 @@
     #reader video {
       width: 100%;
       height: 100%;
-      object-fit: cover; /* This is the key property */
+      object-fit: cover;
     }
     .camera-controls {
       display: flex;
@@ -109,8 +109,6 @@
     .close-button:hover,
     .close-button:focus {
       color: #2b2d42;
-      text-decoration: none;
-      cursor: pointer;
     }
     #modalMessage {
       font-size: 1.15rem;
@@ -142,8 +140,9 @@
         gap: 8px;
       }
     }
-    
-  </style></head><body>
+  </style>
+</head>
+<body>
   <h2>Scan QR to Mark Attendance</h2>
   <div class="camera-controls">
     <button id="turnOnCameraBtn">Turn On Camera</button>
@@ -162,163 +161,136 @@
 
   <script>
     window.onload = function() {
-        const apiBase = "https://script.google.com/macros/s/AKfycbzoE6TV4lIUQY2oxFbY-N1OBMlI8F8-OavCyhCv5WbCjjsCLbKok5xTm5Xpm7wmKpAN/exec";
-        const secretKey = "staff-secret-123";
+      const apiBase = "https://script.google.com/macros/s/AKfycbzoE6TV4lIUQY2oxFbY-N1OBMlI8F8-OavCyhCv5WbCjjsCLbKok5xTm5Xpm7wmKpAN/exec";
+      const secretKey = "staff-secret-123";
 
-        const html5QrCode = new Html5Qrcode("reader");
-        const qrCodeConfig = { fps: 10, qrbox: { width: 300, height: 300 } };
-        const videoConstraints = { facingMode: "environment" };
+      const html5QrCode = new Html5Qrcode("reader");
+      const qrCodeConfig = { fps: 10, qrbox: { width: 300, height: 300 } };
+      const videoConstraints = { facingMode: "environment" };
 
-        const modal = document.getElementById('scanResultModal');
-        const modalMessage = document.getElementById('modalMessage');
-        const continueScanButton = document.getElementById('continueScanButton');
-        const closeModalButton = document.getElementById('closeModalButton');
-        const resultBox = document.getElementById('result');
+      const modal = document.getElementById('scanResultModal');
+      const modalMessage = document.getElementById('modalMessage');
+      const continueScanButton = document.getElementById('continueScanButton');
+      const closeModalButton = document.getElementById('closeModalButton');
+      const resultBox = document.getElementById('result');
 
-        let isScanning = false;
-        let isProcessingScan = false;
+      let isScanning = false;
+      let isProcessingScan = false;
 
-        function startScanner() {
-            if (!isScanning) {
-                html5QrCode.start(
-                    videoConstraints,
-                    qrCodeConfig,
-                    onScanSuccess
-                ).catch(err => {
-                    console.error("Unable to start scanning.", err);
-                    resultBox.innerHTML = "Unable to start camera. Please ensure camera access is granted and no other app is using it.";
-                });
-                isScanning = true;
-                isProcessingScan = false;
-                resultBox.innerHTML = '';
-                hideModal();
-            }
+      function startScanner() {
+        if (!isScanning) {
+          html5QrCode.start(
+            videoConstraints,
+            qrCodeConfig,
+            onScanSuccess
+          ).catch(err => {
+            console.error("Unable to start scanning.", err);
+            resultBox.innerHTML = "Unable to start camera. Please ensure camera access is granted.";
+          });
+          isScanning = true;
+          isProcessingScan = false;
+          resultBox.innerHTML = '';
+          hideModal();
         }
+      }
 
-        function stopScanner() {
-            if (isScanning && html5QrCode.isScanning) {
-                html5QrCode.stop().then(() => {
-                    console.log("QR code scanning stopped.");
-                    isScanning = false;
-                }).catch(err => {
-                    console.warn("Failed to stop scanning.", err);
-                });
-            }
+      function stopScanner() {
+        if (isScanning && html5QrCode.isScanning) {
+          html5QrCode.stop().then(() => {
+            console.log("QR code scanning stopped.");
+            isScanning = false;
+          }).catch(err => {
+            console.warn("Failed to stop scanning.", err);
+          });
         }
+      }
 
-        function showModal(message, type) {
-            modalMessage.innerHTML = message; // Changed to innerHTML to allow <br/>
-            modalMessage.className = `modal-message ${type}`;
-            modal.style.display = 'flex';
+      function showModal(message, type) {
+        modalMessage.innerHTML = message;
+        modalMessage.className = `modal-message ${type}`;
+        modal.style.display = 'flex';
+      }
+
+      function hideModal() {
+        modal.style.display = 'none';
+      }
+
+      async function markAttendance(studentId, action, key) {
+        const fetchAction = action || "mark";
+        const fetchKey = key || secretKey;
+
+        showModal(`Processing ID ${studentId}...`, 'blue');
+
+        try {
+          const res = await fetch(`${apiBase}?id=${encodeURIComponent(studentId)}&key=${encodeURIComponent(fetchKey)}&action=${encodeURIComponent(fetchAction)}`);
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          const data = await res.json();
+
+          let messageType = 'blue';
+          let message = '';
+          let tShirtSize = data["T-Shirt Size"] || 'N/A';
+
+          if (data.success) {
+            message = data.success;
+            messageType = 'green';
+          } else if (data.info) {
+            message = data.info;
+            messageType = 'blue';
+          } else if (data.error) {
+            message = data.error;
+            messageType = 'red';
+          } else {
+            message = 'Unknown response';
+            messageType = 'orange';
+          }
+
+          const finalMessage = `${message}<br/><br/><strong>Size:</strong> ${tShirtSize}`;
+          showModal(finalMessage, messageType);
+        } catch (err) {
+          console.error("Fetch error:", err);
+          showModal(`Error: ${err.message || err}`, 'red');
+        } finally {
+          isProcessingScan = false;
         }
+      }
 
-        function hideModal() {
-            modal.style.display = 'none';
+      function onScanSuccess(decodedText) {
+        if (isProcessingScan) return;
+        stopScanner();
+        isProcessingScan = true;
+
+        try {
+          let params = new URLSearchParams(decodedText.split('?')[1] || decodedText);
+          const studentId = params.get('id');
+          const action = params.get('action');
+          const key = params.get('key');
+
+          if (studentId) {
+            markAttendance(studentId, action, key);
+          } else {
+            showModal(`QR code does not contain an 'id' parameter.`, 'red');
+            isProcessingScan = false;
+          }
+        } catch (error) {
+          console.error("Invalid QR code format", error);
+          showModal(`Invalid QR code format.`, 'red');
+          isProcessingScan = false;
         }
+      }
 
-        continueScanButton.onclick = function() {
-            hideModal();
-            startScanner();
-        };
-
-        closeModalButton.onclick = function() {
-            hideModal();
-            startScanner();
-        };
-
-        window.onclick = function(event) {
-            if (event.target == modal) {
-                hideModal();
-                startScanner();
-            }
-        };
-
-        async function markAttendance(studentId, action, key) {
-            const fetchAction = action || "mark";
-            const fetchKey = key || secretKey;
-            
-            showModal(`Processing ID ${studentId}...`, 'blue');
-
-            try {
-                // Perform the attendance marking fetch, which now also returns T-shirt size
-                const res = await fetch(`${apiBase}?id=${encodeURIComponent(studentId)}&key=${encodeURIComponent(fetchKey)}&action=${encodeURIComponent(fetchAction)}`);
-                if (!res.ok) {
-                    throw new Error(`HTTP error! status: ${res.status}`);
-                }
-                const data = await res.json();
-                
-                let originalMessage = '';
-                let messageType = 'blue';
-                let tShirtSize = data["T-Shirt Size"] || 'N/A'; // Get T-shirt size directly from the response
-
-                if (data.success) {
-                    originalMessage = data.success;
-                    messageType = 'green';
-                } else if (data.info) {
-                    originalMessage = data.info;
-                    messageType = 'blue';
-                } else if (data.error) {
-                    originalMessage = data.error;
-                    messageType = 'red';
-                } else {
-                    originalMessage = `Unknown response`;
-                    messageType = 'orange';
-                }
-
-                isProcessingScan = false;
-                
-                // Combine the original message with the T-shirt size
-                const finalMessage = `${originalMessage}<br/><br/><strong>Size:</strong> ${tShirtSize}`;
-                showModal(finalMessage, messageType);
-
-            } catch (err) {
-                isProcessingScan = false;
-                console.error("Fetch error:", err);
-                showModal(`Error processing request: ${err.message || err}`, 'red');
-            }
+      document.getElementById('turnOnCameraBtn').onclick = startScanner;
+      document.getElementById('turnOffCameraBtn').onclick = stopScanner;
+      continueScanButton.onclick = () => { hideModal(); startScanner(); };
+      closeModalButton.onclick = () => { hideModal(); startScanner(); };
+      window.onclick = event => {
+        if (event.target == modal) {
+          hideModal();
+          startScanner();
         }
+      };
 
-        function onScanSuccess(decodedText) {
-            if (isProcessingScan) {
-                console.log("Scan ignored: Already processing another scan.");
-                return;
-            }
-
-            stopScanner();
-            isProcessingScan = true;
-
-            console.log("Scanned URL:", decodedText);
-
-            try {
-                const url = new URL(decodedText);
-                const studentIdFromUrl = url.searchParams.get('id');
-                const actionFromUrl = url.searchParams.get('action');
-                const keyFromUrl = url.searchParams.get('key');
-
-                if (studentIdFromUrl) {
-                    markAttendance(studentIdFromUrl, actionFromUrl, keyFromUrl);
-                } else {
-                    showModal(`QR code URL does not contain an 'id' parameter.`, 'red');
-                    isProcessingScan = false;
-                }
-            } catch (error) {
-                console.error("Error parsing scanned QR code:", error);
-                showModal(`Scanned QR code is not a valid URL or malformed.`, 'red');
-                isProcessingScan = false;
-            }
-        }
-
-        const turnOnCameraBtn = document.getElementById('turnOnCameraBtn');
-        const turnOffCameraBtn = document.getElementById('turnOffCameraBtn');
-
-        turnOnCameraBtn.onclick = function() {
-            startScanner();
-        };
-
-        turnOffCameraBtn.onclick = function() {
-            stopScanner();
-        };
-
-        startScanner();
+      startScanner();
     };
-  </script></body></html>
+  </script>
+</body>
+</html>
